@@ -1,0 +1,562 @@
+#include <QFileDialog>
+#include <QPainter>
+
+#include "mainframe.h"
+#include "ui_mainframe.h"
+#include "imageform.h"
+
+#include "iostream"
+using namespace std;
+
+MainFrame::MainFrame(QWidget *parent) :
+    QDialog(parent),
+    ui(new Ui::MainFrame)
+{
+    ui->setupUi(this);
+
+    _plpImageForm       = new KPtrList<ImageForm*>(10,false,false);
+    _q_pFormFocused     = 0;
+
+    //객체 맴버의 초기화
+
+    //get a current directory
+    char st[100];
+    GetCurrentDirectoryA(100,st);
+
+    //리스트 출력창을 안보이게
+    ui->listWidget->setVisible(false);
+    this->adjustSize();
+
+    //UI 활성화 갱신
+    UpdateUI();
+}
+
+MainFrame::~MainFrame()
+{ 
+    delete ui;
+    delete _plpImageForm;
+
+
+}
+
+void MainFrame::CloseImageForm(ImageForm *pForm)
+{
+    //ImageForm 포인터 삭제
+    _plpImageForm->Remove(pForm);
+
+    //활성화 ImageForm 초기화
+    _q_pFormFocused     = 0;
+
+    //관련 객체 삭제
+
+    //UI 활성화 갱신
+    UpdateUI();
+}
+
+void MainFrame::UpdateUI()
+{
+    if(ui->tabWidget->currentIndex() == 0)
+    {
+        ui->buttonSepiaTone ->setEnabled( _q_pFormFocused &&  _q_pFormFocused->ID() == "OPEN" );
+        ui->pushButtonLCT   ->setEnabled( _q_pFormFocused &&  _q_pFormFocused->ID() == "OPEN" );
+    }
+    else if(ui->tabWidget->currentIndex() == 1)
+    {
+        ui->pushButtonOtsu  ->setEnabled( _q_pFormFocused &&  _q_pFormFocused->ID() == "OPEN" );
+    }
+    else if(ui->tabWidget->currentIndex() == 2)
+    {
+
+    }
+}
+void MainFrame::on_tabWidget_currentChanged(int index)
+{
+    UpdateUI();
+}
+void MainFrame::OnMousePos(const int &nX, const int &nY, ImageForm* q_pForm)
+{
+
+    UpdateUI();
+}
+
+void MainFrame::closeEvent(QCloseEvent* event)
+{
+    //생성된 ImageForm을 닫는다.
+    for(int i=_plpImageForm->Count()-1; i>=0; i--)
+        _plpImageForm->Item(i)->close();
+
+    //리스트에서 삭제한다.
+    _plpImageForm->RemoveAll();
+}
+
+
+void MainFrame::on_buttonOpen_clicked()
+{
+    //이미지 파일 선택
+    QFileDialog::Options    q_Options   =  QFileDialog::DontResolveSymlinks  | QFileDialog::DontUseNativeDialog; // | QFileDialog::ShowDirsOnly
+    QString                 q_stFile    =  QFileDialog::getOpenFileName(this, tr("Select a Image File"),  "./data", "Image Files(*.bmp *.ppm *.pgm *.png)",0, q_Options);
+
+    if(q_stFile.length() == 0)
+        return;
+
+    //이미지 출력을 위한 ImageForm 생성
+    ImageForm*              q_pForm   = new ImageForm(q_stFile, "OPEN", this);
+
+    _plpImageForm->Add(q_pForm);
+    q_pForm->show();
+
+    //UI 활성화 갱신
+    UpdateUI();
+}
+
+void MainFrame::on_buttonDeleteContents_clicked()
+{
+    //생성된 ImageForm을 닫는다.
+    for(int i=_plpImageForm->Count()-1; i>=0; i--)
+        _plpImageForm->Item(i)->close();
+
+    //리스트에서 삭제한다.
+    _plpImageForm->RemoveAll();
+}
+
+void MainFrame::on_buttonSepiaTone_clicked()
+{
+    K_VISION homework1;
+
+    //포커스 된 ImageForm으로부터 영상을 가져옴
+    KImageColor   icMain;
+    if(_q_pFormFocused != 0 && _q_pFormFocused->ImageColor().Address() &&  _q_pFormFocused->ID() == "OPEN")
+        icMain = _q_pFormFocused->ImageColor();
+    else
+        return;
+
+    //hue, saturation 값 가져오기
+    double dHue = ui->spinHue->text().toDouble();
+    double dSat = ui->spinSaturation->text().toDouble(); // 위와 같은 식으로
+
+    KArray<KHSV> transformImage;
+    transformImage = homework1.RGBtoHSV(icMain);
+
+    vector<KImageGray> hsvSplit(3);
+    homework1.splitHSV(transformImage, hsvSplit[0], hsvSplit[1], hsvSplit[2]);
+    homework1.sepiaTone(transformImage, dHue, dSat);
+
+    //출력을 위한 ImageForm 생성
+    ImageForm*  q_pForm = new ImageForm(homework1.HSVtoRGB(transformImage), "Sepia Tone", this);
+    ImageForm*  q_pFormH = new ImageForm(hsvSplit[0], "H", this);
+    ImageForm*  q_pFormS = new ImageForm(hsvSplit[1], "S", this);
+    ImageForm*  q_pFormV = new ImageForm(hsvSplit[2], "V", this);
+
+    _plpImageForm->Add(q_pForm);
+    _plpImageForm->Add(q_pFormH);
+    _plpImageForm->Add(q_pFormS);
+    _plpImageForm->Add(q_pFormV);
+
+    q_pForm->show();
+    q_pFormH->show();
+    q_pFormS->show();
+    q_pFormV->show();
+
+    //UI 활성화 갱신
+    UpdateUI();
+}
+
+
+void MainFrame::on_buttonShowList_clicked()
+{
+    static int nWidthOld = ui->tabWidget->width();
+
+    if(ui->listWidget->isVisible())
+    {
+        nWidthOld = ui->listWidget->width();
+        ui->listWidget->hide();
+        this->adjustSize();
+    }
+    else
+    {
+        ui->listWidget->show();
+        QRect q_rcWin = this->geometry();
+
+        this->setGeometry(q_rcWin.left(), q_rcWin.top(), q_rcWin.width()+nWidthOld, q_rcWin.height());
+    }
+}
+
+void MainFrame::on_pushButtonLCT_clicked()
+{
+    K_VISION homework1;
+    KImageGray igImage;
+    KImageColor icImage;
+    ImageForm*  q_pForm_result;
+
+    double a = ui->spinBoxA->text().toDouble();
+    double b = ui->spinBoxB->text().toDouble();
+
+    if(_q_pFormFocused != 0 && _q_pFormFocused->ImageColor().Address() &&  _q_pFormFocused->ID() == "OPEN")
+    {
+        icImage = homework1.LCT(0, 255, a, b, _q_pFormFocused->ImageColor());
+        q_pForm_result =  new ImageForm(icImage, "LCT - Color image", this);
+    }
+    else if(_q_pFormFocused != 0 && _q_pFormFocused->ImageGray().Address() &&  _q_pFormFocused->ID() == "OPEN")
+    {
+        igImage = homework1.LCT(0, 255, a, b, _q_pFormFocused->ImageGray());
+        q_pForm_result =  new ImageForm(igImage, "LCT - Gray image", this);
+    }
+    else
+        return;
+
+    _plpImageForm->Add(q_pForm_result);
+    q_pForm_result->show();
+
+    //UI 활성화 갱신
+    UpdateUI();
+}
+
+//  ---------------------------------------------------- homework 2 ----------------------------------------------------
+
+void MainFrame::on_pushButtonOtsu_clicked()
+{
+    K_VISION homework2;
+    KImageGray igImage_otsu;
+    KImageGray imgLabeling;
+    KImageColor drawedImg;
+    ImageForm*  q_pForm_result_otsu;
+    ImageForm*  q_pForm_result_label;
+
+    if(_q_pFormFocused != 0 && _q_pFormFocused->ImageGray().Address() &&  _q_pFormFocused->ID() == "OPEN")
+    {
+        igImage_otsu = homework2.Otsu(_q_pFormFocused->ImageGray());
+        q_pForm_result_otsu =  new ImageForm(igImage_otsu, "Otsu - Gray image", this);
+
+
+        imgLabeling.Create(igImage_otsu.Row(), igImage_otsu.Col());
+        KPOINT curPoint;
+        int index = 1;
+        for(int i = 0 ; i < igImage_otsu.Row() ; i ++)
+            for(int j = 0 ; j < igImage_otsu.Col() ; j ++)
+            {
+                curPoint = KPOINT(i, j);
+                if(igImage_otsu[i][j] != 0 && imgLabeling[i][j] == 0)
+                {
+                    imgLabeling[i][j] = index;
+                    labeling_8_neighbor(igImage_otsu, imgLabeling, curPoint, index);
+                    index++;
+                }
+            }
+
+        int colorIndex = 0;
+        cout << "labeling finish" << endl;
+
+        drawedImg.Create(imgLabeling.Row(), imgLabeling.Col());
+        for(int i = 0 ; i < imgLabeling.Row() ; i++)
+            for(int j = 0 ; j < imgLabeling.Col() ; j ++)
+            {
+                if(imgLabeling[i][j] != 0)
+                {
+                    colorIndex = imgLabeling[i][j] % 5;
+                    switch(colorIndex)
+                    {
+                    case 0:
+                        drawedImg[i][j].r = 255;
+                        drawedImg[i][j].g = 0;
+                        drawedImg[i][j].b = 0;
+                        break;
+                    case 1:
+                        drawedImg[i][j].r = 0;
+                        drawedImg[i][j].g = 255;
+                        drawedImg[i][j].b = 0;
+                        break;
+                    case 2:
+                        drawedImg[i][j].r = 0;
+                        drawedImg[i][j].g = 0;
+                        drawedImg[i][j].b = 255;
+                        break;
+                    case 3:
+                        drawedImg[i][j].r = 255;
+                        drawedImg[i][j].g = 0;
+                        drawedImg[i][j].b = 255;
+                        break;
+                    case 4:
+                        drawedImg[i][j].r = 0;
+                        drawedImg[i][j].g = 255;
+                        drawedImg[i][j].b = 255;
+                        break;
+                    case 5:
+                        drawedImg[i][j].r = 255;
+                        drawedImg[i][j].g = 255;
+                        drawedImg[i][j].b = 0;
+                        break;
+                    default:
+                        cout << "error" << endl;
+                        break;
+                    }
+                }
+            }
+        cout << "labeling drawing finish" << endl;
+        q_pForm_result_label = new ImageForm(drawedImg, "Labeling", this);
+
+    }
+    else
+        return;
+
+    _plpImageForm->Add(q_pForm_result_otsu);
+    _plpImageForm->Add(q_pForm_result_label);
+
+    q_pForm_result_otsu->show();
+    q_pForm_result_label->show();
+
+}
+
+//void MainFrame::on_pushButtonOtsu_clicked()
+//{
+//    K_VISION homework2;
+//    KImageGray igImage_otsu;
+//    KImageGray igImage_label;
+//    KImageGray imgLabeling;
+//    KImageColor drawedImg;
+//    KImageColor iCImage;
+//    map<int, int> equivalenceTable;
+//    ImageForm*  q_pForm_result_otsu;
+//    ImageForm*  q_pForm_result_label;
+
+//    if(_q_pFormFocused != 0 && _q_pFormFocused->ImageGray().Address() &&  _q_pFormFocused->ID() == "OPEN")
+//    {
+//        igImage_otsu = homework2.Otsu(_q_pFormFocused->ImageGray());
+//        q_pForm_result_otsu =  new ImageForm(igImage_otsu, "Otsu - Gray image", this);
+
+//        imgLabeling.Create(igImage_otsu.Row(), igImage_otsu.Col());
+
+//        homework2.Labeling(igImage_otsu, igImage_label, equivalenceTable);
+//        iCImage.Create(igImage_label.Row(), igImage_label.Col());
+//        for(int y = 0; y < igImage_label.Row(); y++)
+//            for(int x = 0; x < igImage_label.Col(); x++)
+//            {
+//                if(igImage_label[y][x] != 0)
+//                {
+////                    cout<<"(int)igImage_label[y][x]: "<<(int)igImage_label[y][x]<<endl;
+////                    cout<<"equivalenceTable[(int)igImage_label[y][x]]: "<<equivalenceTable[(int)igImage_label[y][x]]<<endl;
+//                    if(equivalenceTable[(int)igImage_label[y][x]] %2 == 0)
+//                    {
+//                        iCImage._ppA[y][x].r =  255;
+//                        iCImage._ppA[y][x].g = equivalenceTable[(int)igImage_label[y][x]]*50 > 254 ? 254 : equivalenceTable[(int)igImage_label[y][x]]*50;
+//                        iCImage._ppA[y][x].b = equivalenceTable[(int)igImage_label[y][x]]*2;
+//                    }
+//                    else
+//                    {
+//                        iCImage._ppA[y][x].r = equivalenceTable[(int)igImage_label[y][x]]*50 > 254 ? 254 : equivalenceTable[(int)igImage_label[y][x]]*50;
+//                        iCImage._ppA[y][x].b =  255;
+//                        iCImage._ppA[y][x].g = equivalenceTable[(int)igImage_label[y][x]]*4;
+//                    }
+//                }
+
+//            }
+//        iCImage._ppA[48][185].r =  0;
+//        iCImage._ppA[48][185].b = 255;
+//        iCImage._ppA[48][185].g = 0;
+
+//        iCImage._ppA[47][185].r =  0;
+//        iCImage._ppA[47][185].b = 255;
+//        iCImage._ppA[47][185].g = 0;
+
+//        iCImage._ppA[49][185].r =  0;
+//        iCImage._ppA[49][185].b = 255;
+//        iCImage._ppA[49][185].g = 0;
+
+//        iCImage._ppA[48][186].r =  0;
+//        iCImage._ppA[48][186].b = 255;
+//        iCImage._ppA[48][186].g = 0;
+
+//        iCImage._ppA[48][184].r =  0;
+//        iCImage._ppA[48][184].b = 255;
+//        iCImage._ppA[48][184].g = 0;
+
+//        q_pForm_result_label = new ImageForm(iCImage, "Labeling", this);
+
+//    }
+//    else
+//        return;
+
+//    _plpImageForm->Add(q_pForm_result_otsu);
+//    _plpImageForm->Add(q_pForm_result_label);
+
+//    q_pForm_result_otsu->show();
+//    q_pForm_result_label->show();
+
+//}
+
+void MainFrame::labeling_8_neighbor(KImageGray &input, KImageGray &output, KPOINT &nowPoint, const int &index)
+{
+    KPOINT neighborPoint[8];
+    enum{W, NW, N, NE, E, SE, S, SW};
+    neighborPoint[W]        = KPOINT(nowPoint.nX     , nowPoint.nY - 1);
+    neighborPoint[NW]       = KPOINT(nowPoint.nX - 1 , nowPoint.nY - 1);
+    neighborPoint[N]        = KPOINT(nowPoint.nX - 1 , nowPoint.nY);
+    neighborPoint[NE]       = KPOINT(nowPoint.nX - 1 , nowPoint.nY + 1);
+    neighborPoint[E]        = KPOINT(nowPoint.nX     , nowPoint.nY + 1);
+    neighborPoint[SE]       = KPOINT(nowPoint.nX + 1 , nowPoint.nY + 1);
+    neighborPoint[S]        = KPOINT(nowPoint.nX + 1 , nowPoint.nY);
+    neighborPoint[SW]       = KPOINT(nowPoint.nX + 1 , nowPoint.nY - 1);
+
+    if(neighborPoint[W].nY >= 0)
+    {
+        if(input._ppA[neighborPoint[W].nX][neighborPoint[W].nY] != 0 &&
+                output._ppA[neighborPoint[W].nX][neighborPoint[W].nY] == 0)
+        {
+            output[neighborPoint[W].nX][neighborPoint[W].nY] = index;
+            labeling_8_neighbor(input, output, neighborPoint[W], index);
+        }
+    }
+
+    if(neighborPoint[NW].nX >= 0 && neighborPoint[NW].nY >= 0)
+    {
+        if(input._ppA[neighborPoint[NW].nX][neighborPoint[NW].nY]  != 0&&
+                output._ppA[neighborPoint[NW].nX][neighborPoint[NW].nY] == 0)
+        {
+            output._ppA[neighborPoint[NW].nX][neighborPoint[NW].nY] = index;
+            labeling_8_neighbor(input, output, neighborPoint[NW], index);
+        }
+    }
+
+    if(neighborPoint[N].nX >= 0)
+    {
+        if(input[neighborPoint[N].nX][neighborPoint[N].nY]  != 0&&
+                output[neighborPoint[N].nX][neighborPoint[N].nY] == 0)
+        {
+            output[neighborPoint[N].nX][neighborPoint[N].nY] = index;
+            labeling_8_neighbor(input, output, neighborPoint[N], index);
+        }
+    }
+
+    if(neighborPoint[NE].nX >= 0 && neighborPoint[NE].nY < input.Col())
+    {
+        if(input[neighborPoint[NE].nX][neighborPoint[NE].nY]  != 0&&
+                output[neighborPoint[NE].nX][neighborPoint[NE].nY] == 0)
+        {
+            output[neighborPoint[NE].nX][neighborPoint[NE].nY] = index;
+            labeling_8_neighbor(input, output, neighborPoint[NE], index);
+        }
+    }
+
+    if(neighborPoint[E].nY < input.Col())
+    {
+        if(input[neighborPoint[E].nX][neighborPoint[E].nY] != 0 &&
+                output[neighborPoint[E].nX][neighborPoint[E].nY] == 0)
+        {
+            output[neighborPoint[E].nX][neighborPoint[E].nY] = index;
+            labeling_8_neighbor(input, output, neighborPoint[E], index);
+        }
+    }
+
+    if(neighborPoint[SE].nX < input.Row() && neighborPoint[SE].nY < input.Col())
+    {
+        if(input[neighborPoint[SE].nX][neighborPoint[SE].nY]  != 0&&
+                output[neighborPoint[SE].nX][neighborPoint[SE].nY] == 0)
+        {
+            output[neighborPoint[SE].nX][neighborPoint[SE].nY] = index;
+            labeling_8_neighbor(input, output, neighborPoint[SE], index);
+        }
+    }
+
+    if(neighborPoint[S].nX < input.Row())
+    {
+        if(input[neighborPoint[S].nX][neighborPoint[S].nY] != 0 &&
+                output[neighborPoint[S].nX][neighborPoint[S].nY] == 0)
+        {
+            output[neighborPoint[S].nX][neighborPoint[S].nY] = index;
+            labeling_8_neighbor(input, output, neighborPoint[S], index);
+        }
+    }
+
+    if(neighborPoint[SW].nX < input.Row() && neighborPoint[SW].nY >= 0)
+    {
+        if(input[neighborPoint[SW].nX][neighborPoint[SW].nY] != 0 &&
+                output[neighborPoint[SW].nX][neighborPoint[SW].nY] == 0)
+        {
+            output[neighborPoint[SW].nX][neighborPoint[SW].nY] = index;
+            labeling_8_neighbor(input, output, neighborPoint[SW], index);
+        }
+    }
+}
+
+//  ---------------------------------------------------- homework 3 ----------------------------------------------------
+
+
+void MainFrame::on_pushButtonHE_clicked()
+{
+    K_VISION homework3;
+    ImageForm*  q_pForm_result_HE;
+
+    if(_q_pFormFocused != 0 && _q_pFormFocused->ImageColor().Address() &&  _q_pFormFocused->ID() == "OPEN")
+    {
+        KImageColor icMain;
+        KImageColor icImageHE;
+
+        icMain = _q_pFormFocused->ImageColor();
+        icImageHE = homework3.HE(icMain);
+        q_pForm_result_HE =  new ImageForm(icImageHE, "Histogram Equalization - Color Image", this);
+    }
+    else if(_q_pFormFocused != 0 && _q_pFormFocused->ImageGray().Address() &&  _q_pFormFocused->ID() == "OPEN")
+    {
+        KImageGray igMain;
+        KImageGray igImageHE;
+        igMain = _q_pFormFocused->ImageGray();
+        igImageHE = homework3.HE(igMain);
+        q_pForm_result_HE =  new ImageForm(igImageHE, "Histogram Equalization - Gray Image", this);
+
+    }
+    else
+        return;
+
+    _plpImageForm->Add(q_pForm_result_HE);
+
+    q_pForm_result_HE->show();
+}
+
+void MainFrame::on_pushButtonME_clicked()
+{
+    if(mHMSrcImg.Row()  != 0 &&mHMRefImg.Row() != 0)
+    {
+        ui->pushButtonMESrc->setStyleSheet("background-color: gray");
+        ui->pushButtonMERef->setStyleSheet("background-color: gray");
+//        ui->pushButtonMERef->setStyleSheet("background-color: red");
+
+//        ui->pushButtonMESrc->setStyleSheet("background-color: rgb(221, 221, 221)");
+//        ui->pushButtonMERef->setStyleSheet("background-color: rgb(221, 221, 221)");
+        mHMSrcImg.Clear();
+        mHMRefImg.Clear();
+        mHMSrcImg.Create(0,0);
+        mHMRefImg.Create(0,0);
+
+//       cout<<" mHMSrcImg.Row(): "<< mHMSrcImg.Row()<<endl;
+//        K_VISION homework3;
+//        ImageForm*  q_pForm_result_HM;
+//        KImageColor icImageHM;
+
+//        icImageHM = homework3.HM(mHMSrcImg, mHMRefImg);
+//        q_pForm_result_HM =  new ImageForm(icImageHM, "Histogram Matching - Color Image", this);
+
+//        _plpImageForm->Add(q_pForm_result_HM);
+//        q_pForm_result_HM->show();
+
+
+    }
+
+}
+
+void MainFrame::on_pushButtonMESrc_clicked()
+{
+    if(_q_pFormFocused != 0 && _q_pFormFocused->ImageColor().Address() &&  _q_pFormFocused->ID() == "OPEN")
+    {
+        mHMSrcImg = _q_pFormFocused->ImageColor();
+        ui->pushButtonMESrc->setStyleSheet("background-color: red");
+    }
+}
+
+void MainFrame::on_pushButtonMERef_clicked()
+{
+    if(_q_pFormFocused != 0 && _q_pFormFocused->ImageColor().Address() &&  _q_pFormFocused->ID() == "OPEN")
+    {
+        mHMRefImg = _q_pFormFocused->ImageColor();
+        ui->pushButtonMERef->setStyleSheet("background-color: red");
+
+    }
+}
